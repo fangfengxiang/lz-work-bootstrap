@@ -2,8 +2,8 @@
 node_modules/
 .npm-cache/
 
-# 构建产物
-dist/
+# 构建产物：dist/index.js 是 esbuild 打的自包含 bundle（js-yaml 已内联），
+# 随仓库提交，便于 DSH 直接从 GitHub 克隆即用；build-tests 为测试产物，不提交。
 build-tests/
 
 # 运行时状态（绝不纳入仓库）
