@@ -9,10 +9,38 @@ export declare class UsageError extends Error {
  *  - ctx.get(name)：Cordis 风格软依赖服务查找。
  *  - ctx.plugins / ctx.skills：若运行时直接提供能力，优先使用。
  */
+/** DSH 命令执行结果。 */
+export type CommandResult = {
+    kind: 'success';
+    text?: string;
+} | {
+    kind: 'error';
+    text: string;
+};
+/** DSH 命令调用信息（由 commands 服务传入）。 */
+export interface CommandInvocation {
+    readonly rawInput: string;
+    readonly agent?: unknown;
+    readonly signal?: unknown;
+    readonly commandId?: unknown;
+    readonly attachments?: unknown;
+}
+/** DSH 命令定义（commands.register 的入参）。 */
+export interface CommandDefinition {
+    readonly definitionId?: string;
+    readonly name: string;
+    readonly description: string;
+    readonly input?: {
+        hint: string;
+        attachments?: boolean;
+    };
+    readonly recordInput?: boolean;
+    readonly handler: (invocation: CommandInvocation) => CommandResult | Promise<CommandResult>;
+}
 export interface DshContext {
     get<T = unknown>(name: string): T | undefined;
     commands: {
-        register(name: string, handler: (argv: string[]) => void | Promise<void>): void;
+        register(definition: CommandDefinition): () => void;
     };
     log?: (msg: string) => void;
     plugins?: {
@@ -43,13 +71,20 @@ export interface DshContext {
 /** 解析命令行参数。 */
 export declare function parseArgs(argv: string[]): ParsedArgs;
 /** 把 ctx 提供的能力 + 文件系统探测组装为 DshHost。 */
-export declare function buildHost(ctx: DshContext, cwd: string): DshHost;
-/** 注册命令并分发子命令。 */
-export declare function activate(ctx: DshContext): void;
-/** Cordis 插件导出：对象式插件（name + apply），供 DSH 组合树按 name 加载。 */
+export declare function buildHost(ctx: DshContext, cwd: string, sink?: (t: string) => void): DshHost;
+/** 插件名（组合树 identity）。 */
+export declare const name = "lz-work-bootstrap";
+/** 硬依赖服务：commands。 */
+export declare const inject: string[];
+/** Cordis 插件入口：注册 lz-work 命令（加载期绝不抛错）。 */
+export declare function apply(ctx: DshContext): void;
+/** 兼容旧名。 */
+export declare const activate: typeof apply;
+/** 默认导出：Cordis 插件对象。 */
 declare const _default: {
     name: string;
-    apply: typeof activate;
+    inject: string[];
+    apply: typeof apply;
 };
 export default _default;
 //# sourceMappingURL=index.d.ts.map

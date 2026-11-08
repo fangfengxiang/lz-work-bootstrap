@@ -62,13 +62,36 @@ export class UsageError extends Error {
  *  - ctx.get(name)：Cordis 风格软依赖服务查找。
  *  - ctx.plugins / ctx.skills：若运行时直接提供能力，优先使用。
  */
+/** DSH 命令执行结果。 */
+export type CommandResult =
+  | { kind: 'success'; text?: string }
+  | { kind: 'error'; text: string };
+
+/** DSH 命令调用信息（由 commands 服务传入）。 */
+export interface CommandInvocation {
+  readonly rawInput: string;
+  readonly agent?: unknown;
+  readonly signal?: unknown;
+  readonly commandId?: unknown;
+  readonly attachments?: unknown;
+}
+
+/** DSH 命令定义（commands.register 的入参）。 */
+export interface CommandDefinition {
+  readonly definitionId?: string;
+  readonly name: string;
+  readonly description: string;
+  readonly input?: { hint: string; attachments?: boolean };
+  readonly recordInput?: boolean;
+  readonly handler: (
+    invocation: CommandInvocation,
+  ) => CommandResult | Promise<CommandResult>;
+}
+
 export interface DshContext {
   get<T = unknown>(name: string): T | undefined;
   commands: {
-    register(
-      name: string,
-      handler: (argv: string[]) => void | Promise<void>,
-    ): void;
+    register(definition: CommandDefinition): () => void;
   };
   log?: (msg: string) => void;
   plugins?: {
@@ -191,9 +214,13 @@ function defaultPrompt(message: string): Promise<string | undefined> {
 }
 
 /** 把 ctx 提供的能力 + 文件系统探测组装为 DshHost。 */
-export function buildHost(ctx: DshContext, cwd: string): DshHost {
+export function buildHost(
+  ctx: DshContext,
+  cwd: string,
+  sink?: (t: string) => void,
+): DshHost {
   const probe = fsProbe();
-  const log = ctx.log ?? ((m: string) => console.log(m));
+  const log = sink ?? ctx.log ?? ((m: string) => console.log(m));
 
   const isInstalled = async (id: string): Promise<boolean> => {
     if (ctx.plugins?.isInstalled) {
@@ -317,62 +344,135 @@ async function readSkills(
   return parseSkillsManifest(md);
 }
 
-/** 退出码信号：优先设置 process.exitCode。 */
+/** 退出码信号：写入模块内变量，绝不污染 DSH 进程的 process.exitCode。 */
+let pendingExitCode = 0;
 function signalExit(code: number): void {
-  if (typeof process !== 'undefined' && process && 'exitCode' in process) {
-    process.exitCode = code;
+  pendingExitCode = code;
+}
+
+/** 参数分词：按空白切分（命令参数场景足够）。 */
+function tokenize(raw: string): string[] {
+  const s = raw.trim();
+  return s.length ? s.split(/\s+/) : [];
+}
+
+/** 命令处理：解析参数、分派子命令、把输出汇总为 CommandResult。 */
+async function handleLzWork(
+  ctx: DshContext,
+  invocation: CommandInvocation,
+): Promise<CommandResult> {
+  const argv = tokenize(String(invocation?.rawInput ?? ''));
+  let args: ParsedArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (e) {
+    return { kind: 'error', text: (e as Error).message };
+  }
+
+  const agent = invocation?.agent as
+    | { session?: { cwd?: string; header?: { cwd?: string } } }
+    | undefined;
+  const cwd =
+    agent?.session?.cwd ??
+    agent?.session?.header?.cwd ??
+    (typeof process !== 'undefined' ? process.cwd() : '.');
+
+  const profile = args.profile ?? DEFAULT_PROFILE;
+  const stateIO = new FsStateIO(
+    path.isAbsolute(DEFAULT_STATE_PATH)
+      ? DEFAULT_STATE_PATH
+      : path.join(cwd, DEFAULT_STATE_PATH),
+  );
+
+  const lines: string[] = [];
+  pendingExitCode = 0;
+  const host = buildHost(ctx, cwd, (t) => lines.push(t));
+
+  try {
+    switch (args.subcommand) {
+      case 'plan':
+        await runPlan(host, stateIO, profile, args);
+        break;
+      case 'install':
+        await runInstall(host, stateIO, profile, args);
+        break;
+      case 'sync-skills':
+        await runSyncSkills(host, stateIO, profile, args);
+        break;
+      case 'resume':
+        await runResume(host, stateIO, profile, args);
+        break;
+      case 'verify':
+        await runVerify(host, stateIO, profile);
+        break;
+    }
+  } catch (e) {
+    const msg =
+      e instanceof ManifestError || e instanceof UsageError
+        ? (e as Error).message
+        : `执行失败：${(e as Error).message}`;
+    lines.push(msg);
+    pendingExitCode = ExitCode.PartialFailure;
+  }
+
+  const text = lines.length ? lines.join('\n') : '(无输出)';
+  return { kind: pendingExitCode === 0 ? 'success' : 'error', text };
+}
+
+/** 插件名（组合树 identity）。 */
+export const name = 'lz-work-bootstrap';
+
+/** 硬依赖服务：commands。 */
+export const inject = ['commands'];
+
+/** 安全日志（绝不抛错）。 */
+function safeLog(ctx: DshContext, msg: string): void {
+  try {
+    if (typeof ctx.log === 'function') ctx.log(msg);
+  } catch {
+    /* 忽略 */
   }
 }
 
-/** 注册命令并分发子命令。 */
-export function activate(ctx: DshContext): void {
-  ctx.commands.register('lz-work', async (argv: string[]) => {
-    let args: ParsedArgs;
-    try {
-      args = parseArgs(argv);
-    } catch (e) {
-      ctx.log?.((e as Error).message);
-      signalExit(ExitCode.PartialFailure);
-      return;
-    }
+/** Cordis 插件入口：注册 lz-work 命令（加载期绝不抛错）。 */
+export function apply(ctx: DshContext): void {
+  const commands = (ctx as { commands?: unknown }).commands as
+    | DshContext['commands']
+    | undefined;
+  if (!commands || typeof commands.register !== 'function') {
+    safeLog(ctx, 'lz-work: 宿主未提供 commands 服务，插件已加载但命令未注册');
+    return;
+  }
 
-    const cwd = process.cwd();
-    const host = buildHost(ctx, cwd);
-    const profile = args.profile ?? DEFAULT_PROFILE;
-    const stateIO = new FsStateIO(
-      path.isAbsolute(DEFAULT_STATE_PATH)
-        ? DEFAULT_STATE_PATH
-        : path.join(cwd, DEFAULT_STATE_PATH),
-    );
+  const definition: CommandDefinition = {
+    definitionId: 'lz-work-bootstrap',
+    name: 'lz-work',
+    description:
+      '按 plugins.md / skills.md 编排插件安装与 Skill 同步（plan/install/sync-skills/resume/verify）',
+    input: { hint: '<plan|install|sync-skills|resume|verify> [选项]' },
+    recordInput: false,
+    handler: (invocation) => handleLzWork(ctx, invocation),
+  };
 
-    try {
-      switch (args.subcommand) {
-        case 'plan':
-          await runPlan(host, stateIO, profile, args);
-          signalExit(ExitCode.Ok);
-          break;
-        case 'install':
-          await runInstall(host, stateIO, profile, args);
-          break;
-        case 'sync-skills':
-          await runSyncSkills(host, stateIO, profile, args);
-          break;
-        case 'resume':
-          await runResume(host, stateIO, profile, args);
-          break;
-        case 'verify':
-          await runVerify(host, stateIO, profile);
-          break;
-      }
-    } catch (e) {
-      const msg = e instanceof ManifestError || e instanceof UsageError
-        ? (e as Error).message
-        : `执行失败：${(e as Error).message}`;
-      host.ui.warn(msg);
-      signalExit(ExitCode.PartialFailure);
+  try {
+    const effect = (ctx as { effect?: unknown }).effect;
+    if (typeof effect === 'function') {
+      (effect as (fn: () => () => void) => void)(() =>
+        commands.register(definition),
+      );
+    } else {
+      commands.register(definition);
     }
-  });
+  } catch (e) {
+    safeLog(ctx, `lz-work: 注册命令失败：${(e as Error).message}`);
+  }
 }
+
+/** 兼容旧名。 */
+export const activate = apply;
+
+/** 默认导出：Cordis 插件对象。 */
+export default { name, inject, apply };
 
 async function runPlan(
   host: DshHost,
@@ -482,6 +582,3 @@ async function runVerify(
   for (const line of report.lines) host.ui.print(line);
   signalExit(report.healthy ? ExitCode.Ok : ExitCode.PartialFailure);
 }
-
-/** Cordis 插件导出：对象式插件（name + apply），供 DSH 组合树按 name 加载。 */
-export default { name: 'lz-work-bootstrap', apply: activate };
