@@ -6,7 +6,7 @@
   "author": "fangfengxiang",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fangfengxiang/dsh-lz-bootstrap.git"
+    "url": "https://github.com/fangfengxiang/lz-work-bootstrap.git"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

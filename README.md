@@ -152,7 +152,7 @@ Skill 不走插件安装通道。`install` 只确保 `dsh-skills-console` 已安
 ## 目录结构
 
 ```
-dsh-lz-bootstrap/
+lz-work-bootstrap/
 ├── plugin.json          # 插件声明：命令 + 软依赖
 ├── package.json
 ├── tsconfig.json
@@ -202,7 +202,7 @@ dsh-lz-bootstrap/
 - 包/插件名：`lz-work-bootstrap`（`lz` 取自「靓仔」liangzai 的缩写）。
 - 命令：`lz-work`。
 - 状态文件：`.dsh/lz-work-bootstrap-state.json`。
-- 仓库：`dsh-lz-bootstrap`（GitHub 上用 `dsh-` 前缀做分组；repo 名与包名不必一致，业界常见）。
+- 仓库：`lz-work-bootstrap`（GitHub 仓库已与包名统一）。
 
 ## License
 
