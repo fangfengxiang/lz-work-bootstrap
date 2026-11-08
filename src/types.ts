@@ -30,12 +30,17 @@ export interface PluginEntry {
   version?: string;
 }
 
+/** Skill 分类：通用 / 开发 / 内部。 */
+export type SkillCategory = 'general' | 'dev' | 'internal';
+
 /** skills.md 中单条 Skill 声明。 */
 export interface SkillEntry {
   id: string;
   source: string;
   enabled: boolean;
   scope?: 'project' | 'global';
+  /** 所属分类：通用 / 开发 / 内部。 */
+  category?: SkillCategory;
 }
 
 /** plugins.md 解析结果。 */
@@ -53,7 +58,13 @@ export interface PluginsManifest {
 export interface SkillsManifest {
   version: number;
   manager?: string;
+  /** 扁平化的全部 Skill（含 category）。 */
   skills: SkillEntry[];
+  /**
+   * 内部技能市场的 GitLab 分组。
+   * `__ask__` 表示 sync-skills 启动时询问用户；也可填具体分组。
+   */
+  internalGitlabGroup?: string;
 }
 
 /** 插件生命周期状态。 */

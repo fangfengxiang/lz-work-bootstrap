@@ -36,3 +36,12 @@ export const RESTRICTED_SOURCES = ['github', 'github-release'] as const;
 export const EXCLUDED_BINARY_PROJECTS = [
   'DeepSeek-Harness-Token-Free',
 ] as const;
+
+/** Skill 分类：通用 / 开发 / 内部。 */
+export const SKILL_CATEGORIES = ['general', 'dev', 'internal'] as const;
+
+/** 内部技能市场 GitLab 分组的“启动时询问用户”占位符。 */
+export const GITLAB_GROUP_ASK = '__ask__' as const;
+
+/** 内部技能源中待替换的 GitLab 分组占位变量。 */
+export const GITLAB_GROUP_VAR = '${gitlab_group}' as const;

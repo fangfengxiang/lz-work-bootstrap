@@ -25,6 +25,7 @@ interface FakeHostOpts {
   marketAvailable?: boolean;
   consoleAvailable?: boolean;
   consoleThrow?: string;
+  promptReturn?: string;
 }
 
 function makeHost(opts: FakeHostOpts = {}): DshHost {
@@ -33,11 +34,16 @@ function makeHost(opts: FakeHostOpts = {}): DshHost {
   const files = new Map<string, string>();
   const logs: string[] = [];
 
+  const synced: SkillEntry[] = [];
+
   return {
     ui: {
       print: (t: string) => logs.push(t),
       info: (t: string) => logs.push(t),
       warn: (t: string) => logs.push(t),
+      ...(opts.promptReturn !== undefined
+        ? { prompt: async (_m: string) => opts.promptReturn }
+        : {}),
     },
     fs: {
       async readFile(p: string) {
@@ -77,7 +83,8 @@ function makeHost(opts: FakeHostOpts = {}): DshHost {
     },
     skillsConsole: {
       available: opts.consoleAvailable !== false,
-      async sync(_skill: SkillEntry) {
+      async sync(skill: SkillEntry) {
+        synced.push(skill);
         if (opts.consoleThrow) throw new Error(opts.consoleThrow);
       },
     },
@@ -91,6 +98,7 @@ function makeHost(opts: FakeHostOpts = {}): DshHost {
     _logs: logs,
     _files: files,
     _installed: installed,
+    _synced: synced,
   } as unknown as DshHost;
 }
 
@@ -297,4 +305,43 @@ test('install: 密钥不出现在日志/state（sanitize）', async () => {
   await executeInstall(host, mgr, items, false);
   const dumped = logs.join('\n') + JSON.stringify(mgr.state);
   assert.doesNotMatch(dumped, /MY_KEY/);
+});
+
+test('sync-skills: 内部技能 __ask__ → 询问用户并替换 ${gitlab_group}', async () => {
+  const host = makeHost({ promptReturn: 'my-org' });
+  const mgr = new StateManager(emptyState(), 'dev-workbench');
+  const sm: SkillsManifest = {
+    version: 2,
+    manager: 'dsh-skills-console',
+    skills: [
+      { id: 'browse', source: 'github:o/skills/browse', enabled: true, scope: 'global', category: 'general' },
+      { id: 'inner', source: 'gitlab:${gitlab_group}/skills/inner', enabled: true, scope: 'project', category: 'internal' },
+    ],
+    internalGitlabGroup: '__ask__',
+  };
+  const code = await executeSyncSkills(host, mgr, sm, '.dsh/fallback.json');
+  assert.equal(code, ExitCode.Ok);
+  assert.equal(mgr.getSkill('inner')?.status, 'synced');
+  assert.equal(mgr.getSkill('browse')?.status, 'synced');
+  const synced = (host as unknown as { _synced: SkillEntry[] })._synced;
+  const inner = synced.find((s) => s.id === 'inner');
+  assert.equal(inner?.source, 'gitlab:my-org/skills/inner');
+});
+
+test('sync-skills: 内部技能 __ask__ 但 prompt 不可用 → 降级 manual_sync_required', async () => {
+  const host = makeHost(); // 不提供 prompt
+  const mgr = new StateManager(emptyState(), 'dev-workbench');
+  const sm: SkillsManifest = {
+    version: 2,
+    manager: 'dsh-skills-console',
+    skills: [
+      { id: 'browse', source: 'github:o/skills/browse', enabled: true, scope: 'global', category: 'general' },
+      { id: 'inner', source: 'gitlab:${gitlab_group}/skills/inner', enabled: true, scope: 'project', category: 'internal' },
+    ],
+    internalGitlabGroup: '__ask__',
+  };
+  const code = await executeSyncSkills(host, mgr, sm, '.dsh/fallback.json');
+  assert.equal(mgr.getSkill('browse')?.status, 'synced');
+  assert.equal(mgr.getSkill('inner')?.status, 'manual_sync_required');
+  assert.equal(code, ExitCode.Ok);
 });

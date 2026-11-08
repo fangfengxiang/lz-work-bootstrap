@@ -90,6 +90,68 @@ test('parseSkillsManifest 解析', () => {
   assert.equal(s.skills[1].enabled, false);
 });
 
+test('parseSkillsManifest v2 分类解析（general/dev/internal）', () => {
+  const md = [
+    '```' + SKILLS_FENCE,
+    'version: 2',
+    'manager: dsh-skills-console',
+    'categories:',
+    '  general:',
+    '    skills:',
+    '      - id: browse',
+    '        source: github:o/skills/browse',
+    '        enabled: true',
+    '        scope: global',
+    '      - id: use',
+    '        source: github:o/skills/use',
+    '        enabled: true',
+    '        scope: global',
+    '  dev:',
+    '    skills:',
+    '      - id: openspec',
+    '        source: github:o/skills/openspec',
+    '        enabled: true',
+    '        scope: project',
+    '      - id: cr',
+    '        source: github:o/skills/cr',
+    '        enabled: true',
+    '        scope: project',
+    '      - id: review',
+    '        source: github:o/skills/review',
+    '        enabled: true',
+    '        scope: project',
+    '  internal:',
+    '    gitlab_group: __ask__',
+    '    skills:',
+    '      - id: example-internal-skill',
+    '        source: gitlab:${gitlab_group}/skills/example-internal-skill',
+    '        enabled: true',
+    '        scope: project',
+    '```',
+  ].join('\n');
+  const s = parseSkillsManifest(md);
+  assert.equal(s.version, 2);
+  assert.equal(s.internalGitlabGroup, '__ask__');
+  assert.equal(s.skills.length, 6);
+  const byId = new Map(s.skills.map((x) => [x.id, x]));
+  assert.equal(byId.get('browse')?.category, 'general');
+  assert.equal(byId.get('use')?.category, 'general');
+  assert.equal(byId.get('openspec')?.category, 'dev');
+  assert.equal(byId.get('cr')?.category, 'dev');
+  assert.equal(byId.get('review')?.category, 'dev');
+  assert.equal(byId.get('example-internal-skill')?.category, 'internal');
+});
+
+test('parseSkillsManifest 拒绝未知分类', () => {
+  const md = ['```' + SKILLS_FENCE, 'version: 2', 'categories:', '  bogus:', '    skills: []', '```'].join('\n');
+  assert.throws(() => parseSkillsManifest(md), /未知技能分类/);
+});
+
+test('parseSkillsManifest 既无 categories 也无 skills → 报错', () => {
+  const md = ['```' + SKILLS_FENCE, 'version: 2', 'manager: x', '```'].join('\n');
+  assert.throws(() => parseSkillsManifest(md), /categories 或 skills/);
+});
+
 test('isRestrictedSource', () => {
   assert.equal(isRestrictedSource('github'), true);
   assert.equal(isRestrictedSource('github-release'), true);

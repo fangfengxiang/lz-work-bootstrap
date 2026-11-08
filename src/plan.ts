@@ -8,6 +8,7 @@
  *
  * 墓碑项与手动项必须显式出现在计划表中，不得静默跳过（验收 #4、#8）。
  */
+import { GITLAB_GROUP_ASK } from './config';
 import { isRestrictedSource } from './manifest';
 import {
   computeEntryHash,
@@ -162,21 +163,28 @@ export async function buildPlan(
     for (const skill of input.skills.skills) {
       const newHash = computeSkillHash(skill);
       const st = mgr.getSkill(skill.id);
+      const tag = skill.category === 'internal' ? '【内部技能】' : '';
       if (!skill.enabled) {
         items.push(
-          skillPlanItem(skill, 'disabled', 'skip', '清单已禁用（enabled:false）'),
+          skillPlanItem(skill, 'disabled', 'skip', `${tag}清单已禁用（enabled:false）`),
         );
         continue;
       }
+      const needAsk =
+        skill.category === 'internal' &&
+        input.skills.internalGitlabGroup === GITLAB_GROUP_ASK;
       if (st?.status === 'synced' && st.hash === newHash) {
-        items.push(skillPlanItem(skill, 'synced', 'skip', '已同步且未变化'));
+        items.push(skillPlanItem(skill, 'synced', 'skip', `${tag}已同步且未变化`));
       } else {
+        const base =
+          st?.status === 'synced' ? 'Skill 内容变化，需重新同步' : '未同步';
+        const suffix = needAsk ? '（sync-skills 时询问 GitLab 分组）' : '';
         items.push(
           skillPlanItem(
             skill,
             st?.status ?? 'pending',
             'sync',
-            st?.status === 'synced' ? 'Skill 内容变化，需重新同步' : '未同步',
+            `${tag}${base}${suffix}`,
           ),
         );
       }

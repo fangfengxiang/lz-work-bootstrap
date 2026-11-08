@@ -91,18 +91,48 @@ plugins:
 
 ### `skills.md`
 
+`version: 2` 用 `categories` 把 Skill 分三类：
+
+| 分类 | 说明 | 典型 `scope` |
+|---|---|---|
+| `general` 通用技能 | 通用辅助能力（如 `browse`、`use`） | `global` |
+| `dev` 开发技能 | 面向开发流程（如 `openspec`、`cr`、`review`） | `project` |
+| `internal` 内部技能 | 来自内部 GitLab 仓库 | `project` |
+
 ````md
 ```yaml dsh-skills
-version: 1
+version: 2
 manager: dsh-skills-console
 
-skills:
-  - id: code-review
-    source: github:your-org/skills/code-review
-    enabled: true
-    scope: project
+categories:
+  general:
+    skills:
+      - id: browse
+        source: github:your-org/skills/browse
+        enabled: true
+        scope: global
+  dev:
+    skills:
+      - id: openspec
+        source: github:your-org/skills/openspec
+        enabled: true
+        scope: project
+  internal:
+    gitlab_group: __ask__   # 启动时询问用户；或填具体分组如 my-org/skills
+    skills:
+      - id: example-internal-skill
+        source: gitlab:${gitlab_group}/skills/example-internal-skill
+        enabled: true
+        scope: project
 ```
 ````
+
+**内部技能的 GitLab 分组**：`internal.gitlab_group` 设为 `__ask__` 时，
+`sync-skills` 启动时会通过 `host.ui.prompt` 交互式询问用户输入内部技能市场的
+GitLab 分组，再代入内部技能源中的 `${gitlab_group}`；prompt 不可用或用户留空时，
+内部技能降级为 `manual_sync_required`，不影响通用/开发技能的同步。
+
+`version: 1` 的扁平 `skills:` 列表仍向后兼容（不区分分类）。
 
 Skill 不走插件安装通道。`install` 只确保 `dsh-skills-console` 已安装；`sync-skills` 把清单交给 `dsh-skills-console`。
 

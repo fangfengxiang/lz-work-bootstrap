@@ -17,6 +17,7 @@ import {
   SkillEntry,
   SkillsManifest,
 } from './types';
+import { GITLAB_GROUP_ASK, GITLAB_GROUP_VAR } from './config';
 
 /** dsh-market 适配器。available=false 表示软依赖缺失。 */
 export interface MarketAdapter {
@@ -48,6 +49,8 @@ export interface DshHost {
     print(text: string): void;
     info(text: string): void;
     warn(text: string): void;
+    /** 交互式询问用户输入；不可用时返回 undefined。 */
+    prompt?(message: string): Promise<string | undefined>;
   };
   fs: {
     readFile(path: string): Promise<string>;
@@ -325,6 +328,45 @@ export async function executeResume(
 }
 
 /**
+ * 解析内部技能的 GitLab 分组：
+ *  - gitlab_group 为 `__ask__` → 通过 host.ui.prompt 询问用户；
+ *    prompt 不可用或用户留空 → 内部技能标记 manual_sync_required 并排除。
+ *  - 将源中的 `${gitlab_group}` 替换为解析后的分组。
+ * 返回仍可同步的 skill 列表（排除已标 manual 的内部技能）。
+ */
+async function resolveInternalSkills(
+  host: DshHost,
+  mgr: StateManager,
+  manifest: SkillsManifest,
+  enabled: SkillEntry[],
+): Promise<SkillEntry[]> {
+  const internal = enabled.filter((s) => s.category === 'internal');
+  if (internal.length === 0) return enabled;
+
+  let group: string | undefined = manifest.internalGitlabGroup;
+  if (group === GITLAB_GROUP_ASK) {
+    if (host.ui.prompt) {
+      host.ui.info('检测到内部技能，需要内部技能市场的 GitLab 分组。');
+      group = await host.ui.prompt('请输入内部技能市场的 GitLab 分组（group）：');
+    } else {
+      group = undefined;
+    }
+    if (!group || group === GITLAB_GROUP_ASK) {
+      host.ui.warn('未提供内部 GitLab 分组；内部技能标记为 manual_sync_required。');
+      for (const s of internal) mgr.markSkillManualSync(s.id);
+      return enabled.filter((s) => s.category !== 'internal');
+    }
+  }
+
+  const resolved = group ?? manifest.internalGitlabGroup;
+  return enabled.map((s) =>
+    s.category === 'internal' && resolved
+      ? { ...s, source: s.source.split(GITLAB_GROUP_VAR).join(resolved) }
+      : s,
+  );
+}
+
+/**
  * sync-skills：优先调用 dsh-skills-console；不可用时降级生成清单 + 提示。
  * 不直接写 Skill 文件到扫描目录。
  */
@@ -334,10 +376,16 @@ export async function executeSyncSkills(
   manifest: SkillsManifest,
   fallbackPath: string,
 ): Promise<number> {
-  const enabled = manifest.skills.filter((s) => s.enabled);
+  let enabled = manifest.skills.filter((s) => s.enabled);
   if (enabled.length === 0) {
     host.ui.info('没有启用的 Skill 需要同步。');
     return ExitCode.Ok;
+  }
+
+  // 内部技能：解析 GitLab 分组（__ask__ → 询问用户），替换源中的 ${gitlab_group}
+  enabled = await resolveInternalSkills(host, mgr, manifest, enabled);
+  if (enabled.length === 0) {
+    return ExitCode.PartialFailure;
   }
 
   // 软依赖缺失 → 降级

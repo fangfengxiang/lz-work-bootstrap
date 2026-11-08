@@ -11,6 +11,7 @@
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as readline from 'readline';
 
 import { DEFAULT_PROFILE, DEFAULT_STATE_PATH } from './config';
 import {
@@ -87,6 +88,11 @@ export interface DshContext {
   skills?: {
     syncViaSkillsConsole?(skill: unknown): Promise<void>;
   };
+  ui?: {
+    print?(text: string): void;
+    /** 交互式询问用户；运行时可注入优于默认 readline 的实现。 */
+    prompt?(message: string): Promise<string | undefined>;
+  };
 }
 
 /** 解析命令行参数。 */
@@ -161,6 +167,27 @@ function fsProbe(): LocalProbe & {
       return undefined;
     },
   };
+}
+
+/**
+ * 默认交互式询问：stdin 为 TTY 时用 readline 读取一行；否则返回 undefined。
+ * 真实运行时应通过 ctx.ui.prompt 注入更合适的实现。
+ */
+function defaultPrompt(message: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      resolve(undefined);
+      return;
+    }
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(message, (ans) => {
+      rl.close();
+      resolve(ans?.trim() || undefined);
+    });
+  });
 }
 
 /** 把 ctx 提供的能力 + 文件系统探测组装为 DshHost。 */
@@ -243,6 +270,7 @@ export function buildHost(ctx: DshContext, cwd: string): DshHost {
       print: (t: string) => log(t),
       info: (t: string) => log(t),
       warn: (t: string) => log(t),
+      prompt: ctx.ui?.prompt ?? defaultPrompt,
     },
     fs: {
       async readFile(p: string): Promise<string> {

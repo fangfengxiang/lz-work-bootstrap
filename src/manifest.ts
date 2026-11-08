@@ -14,12 +14,14 @@ import {
   EXCLUDED_BINARY_PROJECTS,
   PLUGINS_FENCE,
   RESTRICTED_SOURCES,
+  SKILL_CATEGORIES,
   SKILLS_FENCE,
 } from './config';
 import {
   PluginEntry,
   PluginSource,
   PluginsManifest,
+  SkillCategory,
   SkillEntry,
   SkillsManifest,
 } from './types';
@@ -193,6 +195,19 @@ export function parsePluginsManifest(md: string): PluginsManifest {
   return { version, profile, sources: { market, allow_github_orgs }, plugins };
 }
 
+/** 解析单条 Skill 条目。 */
+function parseSkillEntry(s: unknown, path: string): SkillEntry {
+  const item = s as Record<string, unknown>;
+  return {
+    id: asString(item.id, `${path}.id`),
+    source: asString(item.source, `${path}.source`),
+    enabled: asBool(item.enabled, `${path}.enabled`) ?? false,
+    scope: (item.scope === 'project' || item.scope === 'global'
+      ? item.scope
+      : undefined) as SkillEntry['scope'],
+  };
+}
+
 /** 解析 skills.md。 */
 export function parseSkillsManifest(md: string): SkillsManifest {
   const body = extractFence(md, SKILLS_FENCE) ?? md;
@@ -213,25 +228,51 @@ export function parseSkillsManifest(md: string): SkillsManifest {
   const manager =
     typeof obj.manager === 'string' ? (obj.manager as string) : undefined;
 
-  const skillsRaw = obj.skills;
-  if (!Array.isArray(skillsRaw)) {
-    throw new ManifestError('skills 必须是数组');
+  const skills: SkillEntry[] = [];
+  let internalGitlabGroup: string | undefined;
+
+  const categoriesRaw = obj.categories;
+  if (categoriesRaw && typeof categoriesRaw === 'object') {
+    // v2：分类结构 categories.<name> = { skills: [...], gitlab_group?: string }
+    const cats = categoriesRaw as Record<string, unknown>;
+    for (const catName of Object.keys(cats)) {
+      if (!(SKILL_CATEGORIES as readonly string[]).includes(catName)) {
+        throw new ManifestError(
+          `未知技能分类：${catName}（允许：${SKILL_CATEGORIES.join(', ')}）`,
+        );
+      }
+      const catVal = cats[catName];
+      let catSkills: unknown;
+      let gitlabGroup: string | undefined;
+      if (Array.isArray(catVal)) {
+        catSkills = catVal;
+      } else if (catVal && typeof catVal === 'object') {
+        const co = catVal as Record<string, unknown>;
+        catSkills = co.skills;
+        if (typeof co.gitlab_group === 'string') gitlabGroup = co.gitlab_group;
+      } else {
+        throw new ManifestError(`分类 ${catName} 必须是数组或含 skills 的对象`);
+      }
+      if (!Array.isArray(catSkills)) {
+        throw new ManifestError(`分类 ${catName} 缺少 skills 数组`);
+      }
+      if (catName === 'internal') internalGitlabGroup = gitlabGroup;
+      catSkills.forEach((s, i) => {
+        const entry = parseSkillEntry(s, `${catName}[${i}]`);
+        entry.category = catName as SkillCategory;
+        skills.push(entry);
+      });
+    }
+  } else if (Array.isArray(obj.skills)) {
+    // v1：扁平 skills 列表（无分类）
+    obj.skills.forEach((s, i) => {
+      skills.push(parseSkillEntry(s, `skills[${i}]`));
+    });
+  } else {
+    throw new ManifestError('skills.md 必须包含 categories 或 skills');
   }
 
-  const skills: SkillEntry[] = skillsRaw.map((s, i) => {
-    const item = s as Record<string, unknown>;
-    return {
-      id: asString(item.id, `skills[${i}].id`),
-      source: asString(item.source, `skills[${i}].source`),
-      enabled:
-        asBool(item.enabled, `skills[${i}].enabled`) ?? false,
-      scope: (item.scope === 'project' || item.scope === 'global'
-        ? item.scope
-        : undefined) as SkillEntry['scope'],
-    };
-  });
-
-  return { version, manager, skills };
+  return { version, manager, skills, internalGitlabGroup };
 }
 
 /** 判断来源是否受限（默认 manual）。 */
