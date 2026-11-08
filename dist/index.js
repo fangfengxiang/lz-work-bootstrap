@@ -171,6 +171,19 @@ function defaultPrompt(message) {
         });
     });
 }
+/** 安全地读取可选服务：ctx.get 缺失时返回 undefined（绝不抛错）。 */
+function softGet(ctx, name) {
+    try {
+        const g = ctx.get;
+        if (typeof g === 'function') {
+            return g.call(ctx, name);
+        }
+    }
+    catch {
+        /* 忽略 */
+    }
+    return undefined;
+}
 /** 把 ctx 提供的能力 + 文件系统探测组装为 DshHost。 */
 function buildHost(ctx, cwd, sink) {
     const probe = fsProbe();
@@ -189,7 +202,7 @@ function buildHost(ctx, cwd, sink) {
     };
     // dsh-market：优先 ctx.plugins.installViaMarket，其次 ctx.get('dsh-market')
     const ctxPlugins = ctx.plugins;
-    const marketSvc = ctx.get('dsh-market');
+    const marketSvc = softGet(ctx, 'dsh-market');
     const installFn = ctxPlugins?.installViaMarket ??
         marketSvc?.install;
     const updateFn = ctxPlugins?.updateViaMarket ??
@@ -209,7 +222,7 @@ function buildHost(ctx, cwd, sink) {
     };
     // dsh-skills-console：优先 ctx.skills.syncViaSkillsConsole，其次 ctx.get
     const ctxSkills = ctx.skills;
-    const skillSvc = ctx.get('dsh-skills-console');
+    const skillSvc = softGet(ctx, 'dsh-skills-console');
     const syncFn = ctxSkills?.syncViaSkillsConsole ??
         skillSvc?.sync;
     const skillsConsole = {
@@ -221,7 +234,7 @@ function buildHost(ctx, cwd, sink) {
     // 预检：通过 ctx.get(name) 查找预检服务
     const precheck = {
         async run(name, pluginId) {
-            const svc = ctx.get(name);
+            const svc = softGet(ctx, name);
             if (!svc) {
                 throw new Error(`预检服务 ${name} 不可用`);
             }

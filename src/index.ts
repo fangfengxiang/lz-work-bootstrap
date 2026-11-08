@@ -213,6 +213,19 @@ function defaultPrompt(message: string): Promise<string | undefined> {
   });
 }
 
+/** 安全地读取可选服务：ctx.get 缺失时返回 undefined（绝不抛错）。 */
+function softGet<T = unknown>(ctx: DshContext, name: string): T | undefined {
+  try {
+    const g = (ctx as { get?: unknown }).get;
+    if (typeof g === 'function') {
+      return (g as (n: string) => T | undefined).call(ctx, name);
+    }
+  } catch {
+    /* 忽略 */
+  }
+  return undefined;
+}
+
 /** 把 ctx 提供的能力 + 文件系统探测组装为 DshHost。 */
 export function buildHost(
   ctx: DshContext,
@@ -239,7 +252,7 @@ export function buildHost(
 
   // dsh-market：优先 ctx.plugins.installViaMarket，其次 ctx.get('dsh-market')
   const ctxPlugins = ctx.plugins;
-  const marketSvc = ctx.get<Record<string, unknown>>('dsh-market');
+  const marketSvc = softGet<Record<string, unknown>>(ctx, 'dsh-market');
   const installFn =
     (ctxPlugins?.installViaMarket as unknown) ??
     ((marketSvc as { install?: unknown })?.install as unknown);
@@ -263,7 +276,7 @@ export function buildHost(
 
   // dsh-skills-console：优先 ctx.skills.syncViaSkillsConsole，其次 ctx.get
   const ctxSkills = ctx.skills;
-  const skillSvc = ctx.get<Record<string, unknown>>('dsh-skills-console');
+  const skillSvc = softGet<Record<string, unknown>>(ctx, 'dsh-skills-console');
   const syncFn =
     (ctxSkills?.syncViaSkillsConsole as unknown) ??
     ((skillSvc as { sync?: unknown })?.sync as unknown);
@@ -278,7 +291,7 @@ export function buildHost(
   // 预检：通过 ctx.get(name) 查找预检服务
   const precheck = {
     async run(name: string, pluginId: string): Promise<boolean> {
-      const svc = ctx.get<Record<string, unknown>>(name);
+      const svc = softGet<Record<string, unknown>>(ctx, name);
       if (!svc) {
         throw new Error(`预检服务 ${name} 不可用`);
       }
