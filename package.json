@@ -1,6 +1,6 @@
 {
   "name": "lz-work-bootstrap",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "薄编排插件：按 plugins.md / skills.md 编排插件安装、Skill 同步、失败续跑、验证与移除墓碑",
   "license": "MIT",
   "author": "fangfengxiang",
