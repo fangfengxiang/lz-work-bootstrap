@@ -46,5 +46,10 @@ export declare function parseArgs(argv: string[]): ParsedArgs;
 export declare function buildHost(ctx: DshContext, cwd: string): DshHost;
 /** 注册命令并分发子命令。 */
 export declare function activate(ctx: DshContext): void;
-export default activate;
+/** Cordis 插件导出：对象式插件（name + apply），供 DSH 组合树按 name 加载。 */
+declare const _default: {
+    name: string;
+    apply: typeof activate;
+};
+export default _default;
 //# sourceMappingURL=index.d.ts.map

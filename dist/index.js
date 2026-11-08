@@ -408,5 +408,6 @@ async function runVerify(host, stateIO, profile) {
         host.ui.print(line);
     signalExit(report.healthy ? types_1.ExitCode.Ok : types_1.ExitCode.PartialFailure);
 }
-exports.default = activate;
+/** Cordis 插件导出：对象式插件（name + apply），供 DSH 组合树按 name 加载。 */
+exports.default = { name: 'lz-work-bootstrap', apply: activate };
 //# sourceMappingURL=index.js.map

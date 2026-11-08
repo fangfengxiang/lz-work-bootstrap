@@ -483,4 +483,5 @@ async function runVerify(
   signalExit(report.healthy ? ExitCode.Ok : ExitCode.PartialFailure);
 }
 
-export default activate;
+/** Cordis 插件导出：对象式插件（name + apply），供 DSH 组合树按 name 加载。 */
+export default { name: 'lz-work-bootstrap', apply: activate };

@@ -1,0 +1,6 @@
+# lz-work-bootstrap 组合包（bundle）补丁层。
+# 由 package.json 的 dsh.bundle.patch 指向本文件；DSH 加载 profile 时把它当作一层 patch。
+# insert 里的行 name 指回本包（exports["."] -> dist/index.js，默认导出即 Cordis 插件对象）。
+- insert:
+    - id: lz-work-bootstrap
+      name: 'lz-work-bootstrap'
