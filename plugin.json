@@ -1,0 +1,18 @@
+{
+  "name": "lz-work-bootstrap",
+  "version": "0.1.0",
+  "description": "按 plugins.md / skills.md 编排插件安装、Skill 同步、失败续跑、验证与移除墓碑的薄编排插件",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "commands": [
+    {
+      "name": "lz-work",
+      "description": "按 plugins.md / skills.md 编排安装、同步、续跑与验证",
+      "subcommands": ["plan", "install", "sync-skills", "resume", "verify"]
+    }
+  ],
+  "dependencies": {
+    "dsh-market": "soft",
+    "dsh-skills-console": "soft"
+  }
+}
